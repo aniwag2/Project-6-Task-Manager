@@ -3,7 +3,7 @@
 3. Install xming from here: https://sourceforge.net/projects/xming/
 4. Use the setup and configure as default through PuTTY (it will be clear when going through setup basically don't change any settings).
 5. Right now, the project structure is:
-Project-6-Task-Manager
+- Project-6-Task-Manager
   - Makefile
   - src
     - main.c
