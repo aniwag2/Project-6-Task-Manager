@@ -9,11 +9,11 @@ Project-6-Task-Manager
     - main.c
 6. Add your edits in src for the part you are working on
 7. To test:
-'''
+```
 {
   make clean
   make
   ./system\_monitor
 }
-'''
+```
 8. If you did the previous steps correctly it should work (not that this is for Windows machines, if you have a Mac, check this ed discussion post and look at the comment from Sage Stefonic: https://edstem.org/us/courses/62297/discussion/5728154
