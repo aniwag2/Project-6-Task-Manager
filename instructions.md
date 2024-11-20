@@ -8,7 +8,7 @@
   - src
     - main.c
 6. Add your edits in src for the part you are working on
-7. To test:
+7. To test, ssh into data through PuTTY and cd into the project directory:
 ```
 make clean
 make
