@@ -7,6 +7,12 @@
 #include <pwd.h>
 #include <sys/stat.h> // Added for struct stat and stat()
 
+// #include "system_info.c"
+
+extern GtkWidget *create_system_info_tabb();
+extern void fetch_system_info(char *os_version, char *kernel_version, char *memory, char *cpu_model, char *disk_storage);
+
+
 // Function prototypes
 GtkWidget* create_process_tab();
 void update_process_list(GtkTreeStore *store);
@@ -117,6 +123,11 @@ int main(int argc, char *argv[]) {
     // Create notebook
     GtkWidget *notebook = gtk_notebook_new();
     gtk_container_add(GTK_CONTAINER(window), notebook);
+
+    // Add System tab
+    GtkWidget *system_info_tab = create_system_info_tabb();
+    gtk_notebook_append_page(GTK_NOTEBOOK(notebook), system_info_tab, gtk_label_new("System Info"));
+
 
     // Add Process tab
     GtkWidget *process_tab = create_process_tab();
