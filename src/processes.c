@@ -114,6 +114,7 @@ void update_process_list(GtkTreeStore *store) {
 }
 
 void on_treeview_right_click(GtkWidget *treeview, GdkEventButton *event, gpointer data) {
+    (void)treeview;
     if (event->type == GDK_BUTTON_PRESS && event->button == 3) { // Right-click
         GtkWidget *menu = gtk_menu_new();
 
@@ -135,6 +136,8 @@ void on_treeview_right_click(GtkWidget *treeview, GdkEventButton *event, gpointe
 }
 
 void on_row_activated(GtkTreeView *treeview, GtkTreePath *path, GtkTreeViewColumn *column, gpointer data) {
+    (void)column; // Mark as unused
+    (void)data;
     GtkTreeModel *model = gtk_tree_view_get_model(treeview);
     GtkTreeIter iter;
 
@@ -185,14 +188,56 @@ void get_process_details(guint pid, char *details, size_t size) {
     }
 }
 
-void stop_process(GtkWidget *widget, gpointer pid) {
-    kill((pid_t)(uintptr_t)pid, SIGSTOP);
+void stop_process_action(GtkMenuItem *item, gpointer data) {
+    (void)item; // Mark as unused
+
+    GtkTreeStore *store = GTK_TREE_STORE(data);
+    GtkTreeIter iter;
+    guint pid = 0;
+
+    // Example implementation to get the PID
+    GtkTreeModel *model = GTK_TREE_MODEL(store);
+    if (gtk_tree_model_get_iter_first(model, &iter)) {
+        gtk_tree_model_get(model, &iter, 0, &pid, -1);
+        if (pid > 0) {
+            kill(pid, SIGSTOP); // Send SIGSTOP to the process
+            g_print("Stopped process with PID %u\n", pid);
+        }
+    }
 }
 
-void continue_process(GtkWidget *widget, gpointer pid) {
-    kill((pid_t)(uintptr_t)pid, SIGCONT);
+void continue_process_action(GtkMenuItem *item, gpointer data) {
+    (void)item; // Mark as unused
+
+    GtkTreeStore *store = GTK_TREE_STORE(data);
+    GtkTreeIter iter;
+    guint pid = 0;
+
+    // Example implementation to get the PID
+    GtkTreeModel *model = GTK_TREE_MODEL(store);
+    if (gtk_tree_model_get_iter_first(model, &iter)) {
+        gtk_tree_model_get(model, &iter, 0, &pid, -1);
+        if (pid > 0) {
+            kill(pid, SIGCONT); // Send SIGCONT to the process
+            g_print("Continued process with PID %u\n", pid);
+        }
+    }
 }
 
-void kill_process(GtkWidget *widget, gpointer pid) {
-    kill((pid_t)(uintptr_t)pid, SIGKILL);
+void kill_process_action(GtkMenuItem *item, gpointer data) {
+    (void)item; // Mark as unused
+
+    GtkTreeStore *store = GTK_TREE_STORE(data);
+    GtkTreeIter iter;
+    guint pid = 0;
+
+    // Example implementation to get the PID
+    GtkTreeModel *model = GTK_TREE_MODEL(store);
+    if (gtk_tree_model_get_iter_first(model, &iter)) {
+        gtk_tree_model_get(model, &iter, 0, &pid, -1);
+        if (pid > 0) {
+            kill(pid, SIGKILL); // Send SIGKILL to the process
+            g_print("Killed process with PID %u\n", pid);
+        }
+    }
 }
