@@ -11,7 +11,7 @@
 
 // #include "system_info.c"
 
-extern GtkWidget *create_system_info_tabb();
+extern GtkWidget *create_system_info_tab();
 extern void fetch_system_info(char *os_version, char *kernel_version, char *memory, char *cpu_model, char *disk_storage);
 
 int main(int argc, char *argv[]) {
@@ -28,7 +28,7 @@ int main(int argc, char *argv[]) {
     gtk_container_add(GTK_CONTAINER(window), notebook);
 
     // Add System tab
-    GtkWidget *system_info_tab = create_system_info_tabb();
+    GtkWidget *system_info_tab = create_system_info_tab();
     gtk_notebook_append_page(GTK_NOTEBOOK(notebook), system_info_tab, gtk_label_new("System Info"));
 
 
