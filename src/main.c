@@ -8,6 +8,7 @@
 #include <sys/stat.h> // Added for struct stat and stat()
 
 #include "processes.h"
+#include "graphs.h"
 
 // #include "system_info.c"
 
@@ -26,6 +27,11 @@ int main(int argc, char *argv[]) {
     // Create notebook
     GtkWidget *notebook = gtk_notebook_new();
     gtk_container_add(GTK_CONTAINER(window), notebook);
+
+    // Add Graph tab
+    Metrics metrics = {0};
+    GtkWidget *graph_tab = create_graph_tab(&metrics);
+    gtk_notebook_append_page(GTK_NOTEBOOK(notebook), graph_tab, gtk_label_new("Usage Graphs"));
 
     // Add System tab
     GtkWidget *system_info_tab = create_system_info_tab();
