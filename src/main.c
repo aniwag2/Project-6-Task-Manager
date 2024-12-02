@@ -9,6 +9,7 @@
 
 #include "processes.h"
 #include "graphs.h"
+#include "file_system.h"
 
 // #include "system_info.c"
 
