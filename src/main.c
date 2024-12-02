@@ -42,6 +42,10 @@ int main(int argc, char *argv[]) {
     GtkWidget *graph_tab = create_graph_tab(&metrics);
     gtk_notebook_append_page(GTK_NOTEBOOK(notebook), graph_tab, gtk_label_new("Usage Graphs"));
 
+    // Add File System tab
+    GtkWidget *file_system_tab = create_file_system_tab();
+    gtk_notebook_append_page(GTK_NOTEBOOK(notebook), file_system_tab, gtk_label_new("File System"));
+
     gtk_widget_show_all(window);
     gtk_main();
     return 0;
