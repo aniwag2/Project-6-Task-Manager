@@ -8,6 +8,8 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <sys/sysinfo.h>
+#include <time.h>
 #include <unistd.h>
 
 GtkWidget* create_process_tab() {
@@ -276,36 +278,109 @@ void show_detailed_view(guint pid) {
     );
 
     GtkWidget *content_area = gtk_dialog_get_content_area(GTK_DIALOG(dialog));
-    GtkWidget *label = gtk_label_new(NULL);
+    GtkWidget *text_view = gtk_text_view_new();
+    gtk_text_view_set_editable(GTK_TEXT_VIEW(text_view), FALSE);
+    gtk_text_view_set_cursor_visible(GTK_TEXT_VIEW(text_view), FALSE);
+    gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(text_view), GTK_WRAP_WORD);
 
-    char details[4096];
+    GtkTextBuffer *buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(text_view));
+
+    char details[2048];
     get_process_details(pid, details, sizeof(details));
 
-    gtk_label_set_text(GTK_LABEL(label), details);
-    gtk_label_set_selectable(GTK_LABEL(label), TRUE);
-    gtk_label_set_line_wrap(GTK_LABEL(label), TRUE);
-    gtk_container_add(GTK_CONTAINER(content_area), label);
+    gtk_text_buffer_set_text(buffer, details, -1);
+
+    GtkWidget *scrolled_window = gtk_scrolled_window_new(NULL, NULL);
+    gtk_container_add(GTK_CONTAINER(scrolled_window), text_view);
+    gtk_widget_set_size_request(scrolled_window, 400, 300);
+
+    gtk_container_add(GTK_CONTAINER(content_area), scrolled_window);
 
     gtk_widget_show_all(dialog);
     g_signal_connect(dialog, "response", G_CALLBACK(gtk_widget_destroy), NULL);
 }
 
 void get_process_details(guint pid, char *details, size_t size) {
-    char path[512];
+    char path[512], line[256];
+    char name[128] = "Unknown", state[32] = "Unknown", user[64] = "Unknown";
+    unsigned long vsize = 0, rss = 0, shared_mem = 0;
+    long utime = 0, stime = 0, starttime = 0;
+    uid_t uid = 0;
+
+    // Get user ID and other info from /proc/[pid]/status
     snprintf(path, sizeof(path), "/proc/%u/status", pid);
-
-    FILE *file = fopen(path, "r");
-    if (file) {
-        char line[256];
-        snprintf(details, size, "Process Details:\n\n");
-
-        while (fgets(line, sizeof(line), file)) {
-            strncat(details, line, size - strlen(details) - 1);
+    FILE *status_file = fopen(path, "r");
+    if (status_file) {
+        while (fgets(line, sizeof(line), status_file)) {
+            if (sscanf(line, "Name:\t%127s", name) == 1)
+                continue;
+            if (sscanf(line, "State:\t%31s", state) == 1)
+                continue;
+            if (sscanf(line, "Uid:\t%u", &uid) == 1)
+                continue;
+            if (sscanf(line, "VmSize:\t%lu kB", &vsize) == 1)
+                continue;
+            if (sscanf(line, "VmRSS:\t%lu kB", &rss) == 1)
+                continue;
+            if (sscanf(line, "RssFile:\t%lu kB", &shared_mem) == 1)
+                continue;
         }
-        fclose(file);
-    } else {
-        snprintf(details, size, "Unable to fetch details for PID %u", pid);
+        fclose(status_file);
     }
+
+    // Get user name
+    struct passwd *pwd = getpwuid(uid);
+    if (pwd) {
+        strncpy(user, pwd->pw_name, sizeof(user) - 1);
+    } else {
+        snprintf(user, sizeof(user), "%u", uid);
+    }
+
+    // Get CPU times and start time from /proc/[pid]/stat
+    snprintf(path, sizeof(path), "/proc/%u/stat", pid);
+    FILE *stat_file = fopen(path, "r");
+    if (stat_file) {
+        char comm[256];
+        char state_char;
+        unsigned long long starttime_ticks;
+        fscanf(stat_file, "%*d %255s %c %*d %*d %*d %*d %*d %*u %*u %*u %*u %*u %ld %ld %*ld %*ld %*ld %*ld %*ld %llu",
+               comm, &state_char, &utime, &stime, &starttime_ticks);
+        fclose(stat_file);
+
+        starttime = starttime_ticks / sysconf(_SC_CLK_TCK);
+    }
+
+    // Convert start time to human-readable format
+    struct sysinfo s_info;
+    sysinfo(&s_info);
+
+    time_t boot_time = time(NULL) - s_info.uptime;
+    time_t start_time = boot_time + starttime;
+
+    char start_time_str[64];
+    strftime(start_time_str, sizeof(start_time_str), "%Y-%m-%d %H:%M:%S", localtime(&start_time));
+
+    // Calculate CPU time
+    long total_time = (utime + stime) / sysconf(_SC_CLK_TCK);
+
+    // Format the details string
+    snprintf(details, size,
+             "Process Name: %s\n"
+             "User: %s\n"
+             "State: %s\n"
+             "CPU Time: %ld s\n"
+             "Started At: %s\n"
+             "Virtual Memory: %lu kB\n"
+             "Resident Memory: %lu kB\n"
+             "Shared Memory: %lu kB\n",
+             name,
+             user,
+             state,
+             total_time,
+             start_time_str,
+             vsize,
+             rss,
+             shared_mem);
 }
 
 void stop_process_action(GtkMenuItem *item, gpointer data) {
