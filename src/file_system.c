@@ -4,8 +4,14 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#ifdef _WIN32
+#include <windows.h>
+#else
 #include <sys/types.h>
 #include <sys/statfs.h>
+#include <errno.h>
+#endif
 
 int g_num_devices = 0;
 file_info *g_file_info = NULL;
@@ -29,6 +35,57 @@ file_info *get_file_info() {
         g_file_info = NULL;
     }
 
+#ifdef _WIN32
+    DWORD drive_mask = GetLogicalDrives();
+    for(int i = 0; i < 26; i++) {
+        if (drive_mask & (1 << i)) {
+            char drive_letter[4] = { 'A' + i, ':', '\\', '\0' };
+            UINT drive_type = GetDriveTypeA(drive_letter);
+            const char *type;
+            switch(drive_type) {
+                case DRIVE_REMOVABLE: type = "Removable"; break;
+                case DRIVE_FIXED: type = "Fixed"; break;
+                case DRIVE_REMOTE: type = "Network"; break;
+                case DRIVE_CDROM: type = "CD-ROM"; break;
+                case DRIVE_RAMDISK: type = "RAM Disk"; break;
+                default: type = "Unknown"; break;
+            }
+
+            ULARGE_INTEGER free_bytes, total_bytes, available_bytes;
+            if (GetDiskFreeSpaceExA(drive_letter, &available_bytes, &total_bytes, &free_bytes)) {
+                unsigned long long total = total_bytes.QuadPart;
+                unsigned long long free = free_bytes.QuadPart;
+                unsigned long long available = available_bytes.QuadPart;
+                unsigned long long used = total - free;
+
+                char total_str[32], free_str[32], available_str[32], used_str[32];
+                snprintf(total_str, sizeof(total_str), "%llu", total);
+                snprintf(free_str, sizeof(free_str), "%llu", free);
+                snprintf(available_str, sizeof(available_str), "%llu", available);
+                snprintf(used_str, sizeof(used_str), "%llu", used);
+
+                file_info new_file = {0};
+                new_file.device = strdup(drive_letter);
+                new_file.mount_point = strdup(drive_letter);
+                new_file.type = strdup(type);
+                new_file.total = strdup(total_str);
+                new_file.free = strdup(free_str);
+                new_file.available = strdup(available_str);
+                new_file.used = strdup(used_str);
+
+                // Add new device to the list
+                file_info *temp = realloc(g_file_info, sizeof(file_info) * (g_num_devices + 1));
+                if (temp == NULL) {
+                    perror("realloc");
+                    exit(EXIT_FAILURE);
+                }
+                g_file_info = temp;
+                g_file_info[g_num_devices] = new_file;
+                g_num_devices++;
+            }
+        }
+    }
+#else
     FILE *mounts_file = fopen("/proc/mounts", "r");
     if (mounts_file == NULL) {
         perror("fopen");
@@ -107,6 +164,7 @@ file_info *get_file_info() {
 
     fclose(mounts_file);
     if (line) free(line);
+#endif
 
     return g_file_info;
 }
