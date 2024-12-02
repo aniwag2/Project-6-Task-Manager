@@ -494,13 +494,13 @@ void get_process_details(guint pid, char *details, size_t size) {
     // Calculate CPU time
     long total_time = (utime + stime) / sysconf(_SC_CLK_TCK);
 
-    // Format the details string
     snprintf(details, size,
              "Process Name: %s\n"
              "User: %s\n"
              "State: %s\n"
              "CPU Time: %ld s\n"
              "Started At: %s\n"
+             "Memory: %lu kB\n"
              "Virtual Memory: %lu kB\n"
              "Resident Memory: %lu kB\n"
              "Shared Memory: %lu kB\n",
@@ -509,6 +509,7 @@ void get_process_details(guint pid, char *details, size_t size) {
              state,
              total_time,
              start_time_str,
+             rss,         // Using RSS as "Memory"
              vsize,
              rss,
              shared_mem);
