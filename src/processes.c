@@ -140,7 +140,7 @@ void update_process_list(ProcessData *process_data) {
             stat_file = fopen(path, "r");
             long utime = 0, stime = 0;
             if (stat_file) {
-                char unused[1024];
+                //char unused[1024];
                 fscanf(stat_file, "%*u %*s %*c %*u %*u %*u %*u %*u %*u %*u %*u %*u %*u %ld %ld", &utime, &stime);
                 fclose(stat_file);
             }
@@ -212,6 +212,8 @@ void update_process_list(ProcessData *process_data) {
 }
 
 void on_treeview_right_click(GtkWidget *treeview, GdkEventButton *event, gpointer data) {
+  	(void)data;
+
     if (event->type == GDK_BUTTON_PRESS && event->button == 3) { // Right-click
         GtkTreeSelection *selection = gtk_tree_view_get_selection(GTK_TREE_VIEW(treeview));
         GtkTreeModel *model = gtk_tree_view_get_model(GTK_TREE_VIEW(treeview));
