@@ -68,9 +68,6 @@ GtkWidget* create_process_tab() {
     // Update the process list initially
     update_process_list(process_data);
 
-    // Set up periodic refresh every 5 seconds
-    //g_timeout_add_seconds(5, update_process_list_timeout, process_data);
-
     return vbox;
 }
 
