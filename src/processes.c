@@ -301,10 +301,11 @@ void show_detailed_view(guint pid) {
 }
 
 void get_process_details(guint pid, char *details, size_t size) {
-    char path[512], line[256];
-    char name[128] = "Unknown", state[32] = "Unknown", user[64] = "Unknown";
+    char path[512], line[4096];
+    char name[256] = "Unknown", state_char = 'U', state[32] = "Unknown", user[64] = "Unknown";
     unsigned long vsize = 0, rss = 0, shared_mem = 0;
-    long utime = 0, stime = 0, starttime = 0;
+    long utime = 0, stime = 0;
+    unsigned long long starttime_ticks = 0;
     uid_t uid = 0;
 
     // Get user ID and other info from /proc/[pid]/status
@@ -312,9 +313,9 @@ void get_process_details(guint pid, char *details, size_t size) {
     FILE *status_file = fopen(path, "r");
     if (status_file) {
         while (fgets(line, sizeof(line), status_file)) {
-            if (sscanf(line, "Name:\t%127s", name) == 1)
+            if (sscanf(line, "Name:\t%255s", name) == 1)
                 continue;
-            if (sscanf(line, "State:\t%31s", state) == 1)
+            if (sscanf(line, "State:\t%c", &state_char) == 1)
                 continue;
             if (sscanf(line, "Uid:\t%u", &uid) == 1)
                 continue;
@@ -324,14 +325,50 @@ void get_process_details(guint pid, char *details, size_t size) {
                 continue;
             if (sscanf(line, "RssFile:\t%lu kB", &shared_mem) == 1)
                 continue;
+            // For systems where 'RssFile' is not available, you can also try 'VmShared'
+            if (sscanf(line, "VmShared:\t%lu kB", &shared_mem) == 1)
+                continue;
         }
         fclose(status_file);
+    }
+
+    // Map state_char to full state description
+    switch (state_char) {
+        case 'R':
+            strcpy(state, "Running");
+            break;
+        case 'S':
+            strcpy(state, "Sleeping");
+            break;
+        case 'D':
+            strcpy(state, "Waiting");
+            break;
+        case 'Z':
+            strcpy(state, "Zombie");
+            break;
+        case 'T':
+        case 't':
+            strcpy(state, "Stopped");
+            break;
+        case 'W':
+            strcpy(state, "Paging");
+            break;
+        case 'X':
+            strcpy(state, "Dead");
+            break;
+        case 'I':
+            strcpy(state, "Idle");
+            break;
+        default:
+            strcpy(state, "Unknown");
+            break;
     }
 
     // Get user name
     struct passwd *pwd = getpwuid(uid);
     if (pwd) {
         strncpy(user, pwd->pw_name, sizeof(user) - 1);
+        user[sizeof(user) - 1] = '\0';
     } else {
         snprintf(user, sizeof(user), "%u", uid);
     }
@@ -340,14 +377,39 @@ void get_process_details(guint pid, char *details, size_t size) {
     snprintf(path, sizeof(path), "/proc/%u/stat", pid);
     FILE *stat_file = fopen(path, "r");
     if (stat_file) {
-        char comm[256];
-        char state_char;
-        unsigned long long starttime_ticks;
-        fscanf(stat_file, "%*d %255s %c %*d %*d %*d %*d %*d %*u %*u %*u %*u %*u %ld %ld %*ld %*ld %*ld %*ld %*ld %llu",
-               comm, &state_char, &utime, &stime, &starttime_ticks);
-        fclose(stat_file);
+        if (fgets(line, sizeof(line), stat_file) != NULL) {
+            // Extract the required fields
+            // The comm field can contain spaces and is enclosed in parentheses
+            char *start = strchr(line, '(');
+            char *end = strrchr(line, ')');
+            if (start && end && end > start) {
+                // Extract comm (process name)
+                size_t comm_len = end - start - 1;
+                strncpy(name, start + 1, comm_len);
+                name[comm_len] = '\0';
 
-        starttime = starttime_ticks / sysconf(_SC_CLK_TCK);
+                // Move past the comm field to the rest of the data
+                char *rest = end + 2; // Skip past ") "
+                char *token;
+                int field = 3; // Fields start from position 3 after comm
+
+                char *saveptr;
+                token = strtok_r(rest, " ", &saveptr);
+                while (token != NULL) {
+                    if (field == 14) {
+                        utime = atol(token);
+                    } else if (field == 15) {
+                        stime = atol(token);
+                    } else if (field == 22) {
+                        starttime_ticks = atoll(token);
+                        break; // We have all the data we need
+                    }
+                    token = strtok_r(NULL, " ", &saveptr);
+                    field++;
+                }
+            }
+        }
+        fclose(stat_file);
     }
 
     // Convert start time to human-readable format
@@ -355,7 +417,7 @@ void get_process_details(guint pid, char *details, size_t size) {
     sysinfo(&s_info);
 
     time_t boot_time = time(NULL) - s_info.uptime;
-    time_t start_time = boot_time + starttime;
+    time_t start_time = boot_time + (starttime_ticks / sysconf(_SC_CLK_TCK));
 
     char start_time_str[64];
     strftime(start_time_str, sizeof(start_time_str), "%Y-%m-%d %H:%M:%S", localtime(&start_time));
