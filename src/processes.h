@@ -7,6 +7,7 @@
 typedef struct {
     GtkTreeStore *store;
     GtkToggleButton *toggle_button;
+    GtkTreeView *treeview;
 } ProcessData;
 
 // Function prototypes
