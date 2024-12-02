@@ -186,7 +186,7 @@ GtkWidget* create_file_system_tab() {
 
     // Insert columns
     gtk_tree_view_insert_column_with_attributes(GTK_TREE_VIEW(treeview), -1, "Device", gtk_cell_renderer_text_new(), "text", 0, NULL);
-    gtk_tree_view_insert_column_with_attributes(GTK_TREE_VIEW(treeview), -1, "Mount Point", gtk_cell_renderer_text_new(), "text", 1, NULL);
+    gtk_tree_view_insert_column_with_attributes(GTK_TREE_VIEW(treeview), -1, "Directory", gtk_cell_renderer_text_new(), "text", 1, NULL);
     gtk_tree_view_insert_column_with_attributes(GTK_TREE_VIEW(treeview), -1, "Type", gtk_cell_renderer_text_new(), "text", 2, NULL);
     gtk_tree_view_insert_column_with_attributes(GTK_TREE_VIEW(treeview), -1, "Total", gtk_cell_renderer_text_new(), "text", 3, NULL);
     gtk_tree_view_insert_column_with_attributes(GTK_TREE_VIEW(treeview), -1, "Free", gtk_cell_renderer_text_new(), "text", 4, NULL);
