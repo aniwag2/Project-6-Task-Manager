@@ -28,11 +28,6 @@ int main(int argc, char *argv[]) {
     GtkWidget *notebook = gtk_notebook_new();
     gtk_container_add(GTK_CONTAINER(window), notebook);
 
-    // Add Graph tab
-    Metrics metrics = {0};
-    GtkWidget *graph_tab = create_graph_tab(&metrics);
-    gtk_notebook_append_page(GTK_NOTEBOOK(notebook), graph_tab, gtk_label_new("Usage Graphs"));
-
     // Add System tab
     GtkWidget *system_info_tab = create_system_info_tab();
     gtk_notebook_append_page(GTK_NOTEBOOK(notebook), system_info_tab, gtk_label_new("System Info"));
@@ -41,6 +36,11 @@ int main(int argc, char *argv[]) {
     // Add Process tab
     GtkWidget *process_tab = create_process_tab();
     gtk_notebook_append_page(GTK_NOTEBOOK(notebook), process_tab, gtk_label_new("Processes"));
+
+    // Add Graph tab
+    Metrics metrics = {0};
+    GtkWidget *graph_tab = create_graph_tab(&metrics);
+    gtk_notebook_append_page(GTK_NOTEBOOK(notebook), graph_tab, gtk_label_new("Usage Graphs"));
 
     gtk_widget_show_all(window);
     gtk_main();
