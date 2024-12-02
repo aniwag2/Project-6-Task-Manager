@@ -53,11 +53,11 @@ GtkWidget* create_process_tab() {
     process_data->toggle_button = GTK_TOGGLE_BUTTON(user_processes_toggle);
 
     // Connect signals
-    g_signal_connect(refresh_button, "clicked", G_CALLBACK(update_process_list), process_data);
-    g_signal_connect(user_processes_toggle, "toggled", G_CALLBACK(update_process_list), process_data);
+    g_signal_connect(refresh_button, "clicked", G_CALLBACK(on_refresh_button_clicked), process_data);
+    g_signal_connect(user_processes_toggle, "toggled", G_CALLBACK(on_refresh_button_clicked), process_data);
 
     // Add right-click context menu
-    g_signal_connect(treeview, "button-press-event", G_CALLBACK(on_treeview_right_click), NULL);
+    g_signal_connect(treeview, "button-press-event", G_CALLBACK(on_treeview_right_click), treeview);
 
     // Add double-click for detailed view
     g_signal_connect(treeview, "row-activated", G_CALLBACK(on_row_activated), NULL);
@@ -66,26 +66,32 @@ GtkWidget* create_process_tab() {
     update_process_list(process_data);
 
     // Set up periodic refresh every 5 seconds
-    g_timeout_add_seconds(5, (GSourceFunc)update_process_list, process_data);
+    g_timeout_add_seconds(5, update_process_list_timeout, process_data);
 
     return vbox;
 }
 
-gboolean update_process_list(gpointer data) {
+void on_refresh_button_clicked(GtkButton *button, gpointer user_data) {
+    (void)button; // Mark as unused
+    ProcessData *process_data = (ProcessData *)user_data;
+    update_process_list(process_data);
+}
+
+gboolean update_process_list_timeout(gpointer data) {
     ProcessData *process_data = (ProcessData *)data;
+    update_process_list(process_data);
+    return TRUE; // Continue calling this function
+}
+
+void update_process_list(ProcessData *process_data) {
     GtkTreeStore *store = process_data->store;
     GtkToggleButton *toggle_button = process_data->toggle_button;
-
-    if (!GTK_IS_TREE_STORE(store)) {
-        g_critical("Invalid GtkTreeStore passed to update_process_list");
-        return TRUE;
-    }
 
     gboolean show_user_only = gtk_toggle_button_get_active(toggle_button);
     uid_t current_uid = getuid(); // Current user's UID
 
     DIR *proc_dir = opendir("/proc");
-    if (!proc_dir) return TRUE;
+    if (!proc_dir) return;
 
     struct dirent *entry;
     gtk_tree_store_clear(store); // Clear the existing list
@@ -203,8 +209,6 @@ gboolean update_process_list(gpointer data) {
         g_free(value);
     }
     g_hash_table_destroy(pid_to_iter);
-
-    return TRUE; // Continue calling this function periodically
 }
 
 void on_treeview_right_click(GtkWidget *treeview, GdkEventButton *event, gpointer data) {
@@ -378,7 +382,9 @@ void list_memory_maps_action(GtkMenuItem *item, gpointer data) {
         }
         fclose(file);
     } else {
-        gtk_text_buffer_set_text(buffer, "Unable to fetch memory maps", -1);
+        char error_msg[256];
+        snprintf(error_msg, sizeof(error_msg), "Unable to fetch memory maps for PID %u: %s", pid, strerror(errno));
+        gtk_text_buffer_set_text(buffer, error_msg, -1);
     }
 
     GtkWidget *scrolled_window = gtk_scrolled_window_new(NULL, NULL);
@@ -432,7 +438,9 @@ void list_open_files_action(GtkMenuItem *item, gpointer data) {
         }
         closedir(dir);
     } else {
-        gtk_text_buffer_set_text(buffer, "Unable to fetch open files", -1);
+        char error_msg[256];
+        snprintf(error_msg, sizeof(error_msg), "Unable to fetch open files for PID %u: %s", pid, strerror(errno));
+        gtk_text_buffer_set_text(buffer, error_msg, -1);
     }
 
     GtkWidget *scrolled_window = gtk_scrolled_window_new(NULL, NULL);
@@ -444,3 +452,4 @@ void list_open_files_action(GtkMenuItem *item, gpointer data) {
     gtk_widget_show_all(dialog);
     g_signal_connect(dialog, "response", G_CALLBACK(gtk_widget_destroy), NULL);
 }
+

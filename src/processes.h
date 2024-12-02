@@ -3,13 +3,17 @@
 
 #include <gtk/gtk.h>
 
+// Define the ProcessData struct to hold shared data
 typedef struct {
     GtkTreeStore *store;
     GtkToggleButton *toggle_button;
 } ProcessData;
 
+// Function prototypes
 GtkWidget* create_process_tab();
-gboolean update_process_list(gpointer data);
+void on_refresh_button_clicked(GtkButton *button, gpointer user_data);
+gboolean update_process_list_timeout(gpointer data);
+void update_process_list(ProcessData *process_data);
 void on_treeview_right_click(GtkWidget *treeview, GdkEventButton *event, gpointer data);
 void on_row_activated(GtkTreeView *treeview, GtkTreePath *path, GtkTreeViewColumn *column, gpointer data);
 void show_detailed_view(guint pid);
