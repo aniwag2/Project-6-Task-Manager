@@ -1,7 +1,7 @@
-
 #include <gtk/gtk.h>
 #include <cairo.h>
 #include <limits.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -12,7 +12,9 @@
 
 GraphData cpu_data = {{0}};
 GraphData memo_data = {{0}};
+GraphData swap_data = {{0}};
 GraphData netin_data = {{0}};
+GraphData netout_data = {{0}};
 
 void format_bytes(long bytes, char *output) {
     const char *units[] = {"Bytes", "KiB", "MiB", "GiB", "TiB"};
@@ -28,50 +30,39 @@ void format_bytes(long bytes, char *output) {
 }
 
 GtkWidget *create_graph_tab(Metrics *metrics) {
+    GtkWidget *scrolled_window = gtk_scrolled_window_new(NULL, NULL);
+    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scrolled_window), GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
+
     GtkWidget *graph_tab = gtk_box_new(GTK_ORIENTATION_VERTICAL, 5);
+    gtk_container_add(GTK_CONTAINER(scrolled_window), graph_tab);
 
     GtkWidget *cpu_area = gtk_drawing_area_new();
-    gtk_widget_set_size_request(cpu_area, 800, 100);
-    gtk_box_pack_start(GTK_BOX(graph_tab), cpu_area, TRUE, TRUE, 0);
+    gtk_widget_set_size_request(cpu_area, 800, 250);
+    gtk_box_pack_start(GTK_BOX(graph_tab), cpu_area, FALSE, TRUE, 0);
     g_object_set_data(G_OBJECT(cpu_area), "metrics", metrics);
     g_signal_connect(cpu_area, "draw", G_CALLBACK(draw_cpu_graph), metrics);
 
     metrics->cpu_drawing_area = cpu_area;
 
     GtkWidget *mem_swap_area = gtk_drawing_area_new();
-    gtk_widget_set_size_request(mem_swap_area, 800, 100);
-    gtk_box_pack_start(GTK_BOX(graph_tab), mem_swap_area, TRUE, TRUE, 0);
+    gtk_widget_set_size_request(mem_swap_area, 800, 250);
+    gtk_box_pack_start(GTK_BOX(graph_tab), mem_swap_area, FALSE, TRUE, 0);
     g_object_set_data(G_OBJECT(mem_swap_area), "metrics", metrics);
     g_signal_connect(mem_swap_area, "draw", G_CALLBACK(draw_mem_swap_graph), metrics);
 
     metrics->mem_swap_drawing_area = mem_swap_area;
 
     GtkWidget *network_area = gtk_drawing_area_new();
-    gtk_widget_set_size_request(network_area, 800, 100);
-    gtk_box_pack_start(GTK_BOX(graph_tab), network_area, TRUE, TRUE, 0);
+    gtk_widget_set_size_request(network_area, 800, 250);
+    gtk_box_pack_start(GTK_BOX(graph_tab), network_area, FALSE, TRUE, 0);
     g_object_set_data(G_OBJECT(network_area), "metrics", metrics);
     g_signal_connect(network_area, "draw", G_CALLBACK(draw_network_graph), metrics);
 
     metrics->network_drawing_area = network_area;
 
-    // GtkWidget *drawing_area = gtk_drawing_area_new();
-
-    // // Set size for the drawing area
-    // gtk_widget_set_size_request(drawing_area, 800, 400);
-    // gtk_box_pack_start(GTK_BOX(graph_tab), drawing_area, TRUE, TRUE, 0);
-
-    // // Associate Metrics with the drawing area
-    // g_object_set_data(G_OBJECT(drawing_area), "metrics", metrics);
-
-    // // Connect the draw signal to render the graphs
-    // g_signal_connect(drawing_area, "draw", G_CALLBACK(draw_graph), metrics);
-
-    // Start a timeout to update metrics and refresh the drawing area
     g_timeout_add(1000, update_metrics, metrics);
-    // g_timeout_add(1000, update_metrics, mem_swap_area);
 
-
-    return graph_tab;
+    return scrolled_window;
 }
 
 gboolean update_metrics(gpointer data) {
@@ -81,8 +72,10 @@ gboolean update_metrics(gpointer data) {
 
     // Update the metrics
     metrics->cpu_usage = get_cpu_usage();
-    metrics->memory_usage = get_memory_usage();
-    metrics->swap_usage = get_swap_usage();    
+    // metrics->memory_usage = get_memory_usage();
+    get_memory_usage(&metrics->memory_usage, &metrics->memory_used, &metrics->memory_total);
+    // metrics->swap_usage = get_swap_usage();
+    get_swap_usage(&metrics->swap_usage, &metrics->swap_used, &metrics->swap_total);
     get_network_usage(&metrics->network_in, &metrics->network_out, &metrics->total_received, &metrics->total_sent);
 
     // Update the historical data
@@ -92,8 +85,14 @@ gboolean update_metrics(gpointer data) {
     memmove(memo_data.usages, memo_data.usages + 1, (NUM_POINTS - 1) * sizeof(double));
     memo_data.usages[NUM_POINTS - 1] = metrics->memory_usage;
 
+    memmove(swap_data.usages, swap_data.usages + 1, (NUM_POINTS - 1) * sizeof(double));
+    swap_data.usages[NUM_POINTS - 1] = metrics->swap_usage;
+
     memmove(netin_data.usages, netin_data.usages + 1, (NUM_POINTS - 1) * sizeof(double));
     netin_data.usages[NUM_POINTS - 1] = metrics->network_in;
+
+    memmove(netout_data.usages, netout_data.usages + 1, (NUM_POINTS - 1) * sizeof(double));
+    netout_data.usages[NUM_POINTS - 1] = metrics->network_out;
 
     // Redraw all associated drawing areas
     gtk_widget_queue_draw(metrics->cpu_drawing_area);
@@ -112,6 +111,7 @@ void draw_cpu_graph(GtkWidget *widget, cairo_t *cr, gpointer data) {
     cairo_set_source_rgb(cr, 1, 1, 1);
     cairo_paint(cr);
 
+    // Draw the graph rectangle
     cairo_set_line_width(cr, 2); 
     cairo_set_source_rgb(cr, 0, 0, 0);
     cairo_rectangle(cr, 50, 50, 500, 150);
@@ -120,36 +120,44 @@ void draw_cpu_graph(GtkWidget *widget, cairo_t *cr, gpointer data) {
     // Set line width for the graph line
     cairo_set_line_width(cr, 2); 
 
-    // Set the color for the CPU usage line (green)
-    cairo_set_source_rgb(cr, 0, 1, 0);
+    // Set the color for the CPU usage line (orange)
+    cairo_set_source_rgb(cr, 0.949, 0.522, 0);
 
     // Plot the line graph based on historical data
     int width = 500;
-    int height = 200;
+    int height = 150;
     double x_step = (double)width / NUM_POINTS;
 
     // Start the path at the first point in the history 
-    cairo_move_to(cr, 50, (height - cpu_data.usages[0] * height / 100));
+    cairo_move_to(cr, 50, 50 + (height - cpu_data.usages[0] * height / 100));
 
     // Loop through the data points and create the line graph
     for (int i = 1; i < NUM_POINTS; i++) {
         int x = 50 + (i * x_step);
-        int y = height - cpu_data.usages[i] * height / 100;
-        // printf("Current cpu y: %d\n", y);
+        int y = 50 + (height - cpu_data.usages[i] * height / 100);
         cairo_line_to(cr, x, y);
     }
 
     // Draw the line graph
     cairo_stroke(cr);
 
-    // Display CPU usage text
-    cairo_set_source_rgb(cr, 0, 0, 0);
-    cairo_move_to(cr, 50, 20);
-    cairo_show_text(cr, "CPU Usage");
-    cairo_move_to(cr, 50, 40);
+    // Display CPU usage text with color-coded dot
     char buffer[64];
-    snprintf(buffer, sizeof(buffer), "%.2f%%", metrics->cpu_usage);
+
+    // Draw the colored dot
+    cairo_set_source_rgb(cr, 0.949, 0.522, 0); // Same color as the line
+    cairo_arc(cr, 50, 40, 5, 0, 2 * M_PI); // Position (50, 40), radius 5
+    cairo_fill(cr);
+
+    // Set text color to black
+    cairo_set_source_rgb(cr, 0, 0, 0);
+    cairo_move_to(cr, 60, 45); // Adjust position to be next to the dot
+    snprintf(buffer, sizeof(buffer), "CPU1 %.2f%%", metrics->cpu_usage);
     cairo_show_text(cr, buffer);
+
+    // Draw the graph title
+    cairo_move_to(cr, 50, 20);
+    cairo_show_text(cr, "CPU History");
 }
 
 void draw_mem_swap_graph(GtkWidget *widget, cairo_t *cr, gpointer data) {
@@ -168,20 +176,34 @@ void draw_mem_swap_graph(GtkWidget *widget, cairo_t *cr, gpointer data) {
     // Set line width for the graph line
     cairo_set_line_width(cr, 2); 
 
-    cairo_set_source_rgb(cr, 0, 0, 1);
+    cairo_set_source_rgb(cr, .435, .118, .659);
 
     // Plot the line graph based on historical data
     int width = 500;
-    int height = 200;
+    int height = 150;
     double x_step = (double)width / NUM_POINTS;
 
     // Start the path at the first point in the history 
-    cairo_move_to(cr, 50, (height - memo_data.usages[0] * height / 100));
+    cairo_move_to(cr, 50, 50 + (height - memo_data.usages[0] * height / 100));
 
     // Loop through the data points and create the line graph
     for (int i = 1; i < NUM_POINTS; i++) {
         int x = 50 + (i * x_step);
-        int y = height - memo_data.usages[i] * height / 100;
+        int y = 50 + (height - memo_data.usages[i] * height / 100);
+        cairo_line_to(cr, x, y);
+    }
+
+    cairo_stroke(cr);
+
+    cairo_set_source_rgb(cr, .113, .545, .113);
+
+    // Start the path at the first point in the history 
+    cairo_move_to(cr, 50, 50 + (height - swap_data.usages[0] * height / 100));
+
+    // Loop through the data points and create the line graph
+    for (int i = 1; i < NUM_POINTS; i++) {
+        int x = 50 + (i * x_step);
+        int y = 50 + (height - swap_data.usages[i] * height / 100);
         cairo_line_to(cr, x, y);
     }
 
@@ -200,20 +222,52 @@ void draw_mem_swap_graph(GtkWidget *widget, cairo_t *cr, gpointer data) {
     // cairo_fill(cr);
 
     // Memory and Swap usage text
+    // Memory and Swap usage text with color-coded dots
+    char buffer[128];
+    char mem_space_used[50], mem_space_total[50];
+    char swap_space_used[50], swap_space_total[50];
+
+    format_bytes(metrics->memory_used, mem_space_used);
+    format_bytes(metrics->memory_total, mem_space_total);
+    format_bytes(metrics->swap_used, swap_space_used);
+    format_bytes(metrics->swap_total, swap_space_total);
+
+    // Draw graph title
     cairo_set_source_rgb(cr, 0, 0, 0);
     cairo_move_to(cr, 50, 20);
-    cairo_show_text(cr, "Memory Usage:");
-    cairo_move_to(cr, 50, 40);
-    char buffer[64];
-    snprintf(buffer, sizeof(buffer), "%.2f%%", metrics->memory_usage);
+    cairo_show_text(cr, "Memory and Swap History");
+
+    // Draw Memory label with colored dot
+    cairo_set_source_rgb(cr, 0.435, 0.118, 0.659);
+    cairo_arc(cr, 50, 40, 5, 0, 2 * M_PI);
+    cairo_fill(cr);
+
+    cairo_set_source_rgb(cr, 0, 0, 0);
+    cairo_move_to(cr, 60, 45);
+    snprintf(buffer, sizeof(buffer), "Memory: %s (%.2f%%) of %s", mem_space_used, metrics->memory_usage, mem_space_total);
     cairo_show_text(cr, buffer);
 
-    // cairo_move_to(cr, 220, 90);
-    // cairo_show_text(cr, "Swap Usage:");
-    // cairo_move_to(cr, 220, 110);
-    // snprintf(buffer, sizeof(buffer), "%.2f%%", metrics->swap_usage);
-    // cairo_show_text(cr, buffer);
+    // Draw Swap label with colored dot
+    cairo_set_source_rgb(cr, 0.113, 0.545, 0.113);
+    cairo_arc(cr, 300, 40, 5, 0, 2 * M_PI);
+    cairo_fill(cr);
+
+    cairo_set_source_rgb(cr, 0, 0, 0);
+    cairo_move_to(cr, 310, 45);
+    snprintf(buffer, sizeof(buffer), "Swap: %s (%.2f%%) of %s", swap_space_used, metrics->swap_usage, swap_space_total);
+    cairo_show_text(cr, buffer);
+
 }
+
+    // // Memory usage bar graph
+    // cairo_set_source_rgb(cr, 0, 0, 1);
+    // cairo_rectangle(cr, 50, 180 - metrics->memory_usage * 1.8, 50, metrics->memory_usage * 1.8);
+    // cairo_fill(cr);
+
+    // // Swap usage bar graph
+    // cairo_set_source_rgb(cr, 1, 0, 0);
+    // cairo_rectangle(cr, 150, 180 - metrics->swap_usage * 1.8, 50, metrics->swap_usage * 1.8);
+    // cairo_fill(cr);
 
 void draw_network_graph(GtkWidget *widget, cairo_t *cr, gpointer data) {
     Metrics *metrics = g_object_get_data(G_OBJECT(widget), "metrics");
@@ -230,104 +284,78 @@ void draw_network_graph(GtkWidget *widget, cairo_t *cr, gpointer data) {
     // Set line width for the graph line
     cairo_set_line_width(cr, 2); 
 
-    cairo_set_source_rgb(cr, 1, 0, 0);
+    cairo_set_source_rgb(cr, .529, .808, 1);
 
     // Plot the line graph based on historical data
     int width = 500;
-    int height = 200;
+    int height = 150;
     double x_step = (double)width / NUM_POINTS;
 
     // Start the path at the first point in the history 
-    cairo_move_to(cr, 50, (height - netin_data.usages[0] * height / 200000 / 1024));
+    cairo_move_to(cr, 50, 50 + (height - netin_data.usages[0] * height / 200000 / 1024));
 
     // Loop through the data points and create the line graph
     for (int i = 1; i < NUM_POINTS; i++) {
         int x = 50 + (i * x_step);
-        int y = height - netin_data.usages[i] * height / 200000 / 1024;
+        int y = 50 + (height - netin_data.usages[i] * height / 200000 / 1024);
         if (y < 50) y = 50; //probably not the best way to do it
         // printf("Current netin y: %d\n", y);
         cairo_line_to(cr, x, y);
-
     }
 
     // Draw the line graph
     cairo_stroke(cr);
 
-    // Network usage text
-    char netin[50] = "";
+    cairo_set_source_rgb(cr, .863, .078, .235);
+
+    cairo_move_to(cr, 50, 50 + (height - netout_data.usages[0] * height / 200000 / 1024));
+
+    // Loop through the data points and create the line graph
+    for (int i = 1; i < NUM_POINTS; i++) {
+        int x = 50 + (i * x_step);
+        int y = 50 + (height - netout_data.usages[i] * height / 200000 / 1024);
+        if (y < 50) y = 50; //probably not the best way to do it
+        // printf("Current netin y: %d\n", y);
+        cairo_line_to(cr, x, y);
+    }
+
+    // Draw the line graph
+    cairo_stroke(cr);
+
+    // Network usage text with color-coded dots
+    char netin[50], netout[50], totalrec[50], totalsent[50];
+    char buffer[128];
+
     format_bytes(metrics->network_in, netin);
-    char netout[50] = "";
     format_bytes(metrics->network_out, netout);
-    char totalrec[50] = "";
     format_bytes(metrics->total_received, totalrec);
-    char totalsent[50] = "";
     format_bytes(metrics->total_sent, totalsent);
 
+    // Draw graph title
     cairo_set_source_rgb(cr, 0, 0, 0);
     cairo_move_to(cr, 50, 20);
-    cairo_show_text(cr, "Network Usage:");
-    cairo_move_to(cr, 50, 40);
-    char buffer[64];
-    snprintf(buffer, sizeof(buffer), "Receiving: %s/s", netin);
+    cairo_show_text(cr, "Network Usage");
+
+    // Draw Receiving label with colored dot
+    cairo_set_source_rgb(cr, 0.529, 0.808, 1);
+    cairo_arc(cr, 50, 40, 5, 0, 2 * M_PI);
+    cairo_fill(cr);
+
+    cairo_set_source_rgb(cr, 0, 0, 0);
+    cairo_move_to(cr, 60, 45);
+    snprintf(buffer, sizeof(buffer), "Receiving: %s/s (Total: %s)", netin, totalrec);
     cairo_show_text(cr, buffer);
 
-    cairo_move_to(cr, 450, 40);
-    snprintf(buffer, sizeof(buffer), "Sending: %s/s", netout);
-    cairo_show_text(cr, buffer);
+    // Draw Sending label with colored dot
+    cairo_set_source_rgb(cr, 0.863, 0.078, 0.235);
+    cairo_arc(cr, 300, 40, 5, 0, 2 * M_PI);
+    cairo_fill(cr);
 
-    cairo_move_to(cr, 250, 40);
-    snprintf(buffer, sizeof(buffer), "Total Received: %s", totalrec);
-    cairo_show_text(cr, buffer);
-
-    cairo_move_to(cr, 650, 40);
-    snprintf(buffer, sizeof(buffer), "Total Sent: %s", totalsent);
+    cairo_set_source_rgb(cr, 0, 0, 0);
+    cairo_move_to(cr, 310, 45);
+    snprintf(buffer, sizeof(buffer), "Sending: %s/s (Total: %s)", netout, totalsent);
     cairo_show_text(cr, buffer);
 }
-
-
-// void draw_cpu_graph(GtkWidget *widget, cairo_t *cr, gpointer data) {
-//     Metrics *metrics = g_object_get_data(G_OBJECT(widget), "metrics");
-//     if (!metrics) return;
-
-//     cairo_set_source_rgb(cr, 1, 1, 1);
-//     cairo_paint(cr);
-
-//     cairo_set_line_width(cr, 2); // Set border thickness
-//     cairo_set_source_rgb(cr, 0, 0, 0); // Border color (black)
-//     cairo_rectangle(cr, 50, 50, 50, 180);
-//     cairo_stroke(cr); // Apply the border
-
-//     // CPU usage bar graph
-//     cairo_set_source_rgb(cr, 0, 1, 0);
-//     cairo_rectangle(cr, 50, 230 - metrics->cpu_usage * 1.8, 50, metrics->cpu_usage * 1.8);
-//     cairo_fill(cr);
-
-//     // CPU usage text
-//     cairo_set_source_rgb(cr, 0, 0, 0);
-//     cairo_move_to(cr, 120, 70);
-//     cairo_show_text(cr, "CPU Usage:");
-//     cairo_move_to(cr, 120, 90);
-//     char buffer[64];
-//     snprintf(buffer, sizeof(buffer), "%.2f%%", metrics->cpu_usage);
-//     cairo_show_text(cr, buffer);
-// }
-
-
-// void draw_graph(GtkWidget *widget, cairo_t *cr, gpointer data) {
-//     Metrics *metrics = g_object_get_data(G_OBJECT(widget), "metrics");
-//     if (!metrics) return;
-
-//     cairo_set_source_rgb(cr, 1, 1, 1);
-//     cairo_paint(cr);   
-
-//     cairo_set_source_rgb(cr, 0, 1, 0);
-//     cairo_rectangle(cr, 50, 200 - metrics->cpu_usage * 2, 50, metrics->cpu_usage * 2);
-//     cairo_fill(cr);
-
-//     cairo_set_source_rgb(cr, 0, 0, 1);
-//     cairo_rectangle(cr, 150, 200 - metrics->memory_usage * 2, 50, metrics->memory_usage * 2);
-//     cairo_fill(cr);
-// }
 
 double get_cpu_usage() {
     static long prev_idle = 0, prev_total = 0;
@@ -353,15 +381,24 @@ double get_cpu_usage() {
     return 100.0 * (1.0 - (double)delta_idle / (double)delta_total);
 }
 
-
-double get_memory_usage() {
+void get_memory_usage(double *memory_usage, long *mem_used, long *mem_total) {
     FILE *fp = fopen("/proc/meminfo", "r");
+    if (!fp) {
+        perror("Failed to open /proc/meminfo");
+        *memory_usage = -1;
+        *mem_used = 0;
+        *mem_total = 0;
+        return;
+    }
+
     char key[64];
-    long value, mem_total = 0, mem_free = 0, buffers = 0, cached = 0;
+    long value, mem_free = 0, buffers = 0, cached = 0;
+    *mem_used = 0;
+    *mem_total = 0;
 
     while (fscanf(fp, "%s %ld", key, &value) != EOF) {
         if (strcmp(key, "MemTotal:") == 0)
-            mem_total = value;
+            *mem_total = value;
         if (strcmp(key, "MemFree:") == 0)
             mem_free = value;
         if (strcmp(key, "Buffers:") == 0)
@@ -371,11 +408,43 @@ double get_memory_usage() {
     }
     fclose(fp);
 
-    return 100.0 * (1.0 - (double)(mem_free + buffers + cached) / mem_total);
+    if (*mem_total > 0) {
+        *mem_used = *mem_total - (mem_free + buffers + cached);
+        *memory_usage = 100.0 * (double)*mem_used / *mem_total;
+    } else {
+        *memory_usage = -1;
+    }
 }
 
-double get_swap_usage() {
-    return 0;
+void get_swap_usage(double *swap_usage, long *swap_used, long *swap_total) {
+    FILE *fp = fopen("/proc/meminfo", "r");
+    if (!fp) {
+        perror("Failed to open /proc/meminfo");
+        *swap_usage = -1;
+        *swap_used = 0;
+        *swap_total = 0;
+        return;
+    }
+
+    char key[64];
+    long value, swap_free = 0;
+    *swap_used = 0;
+    *swap_total = 0;
+
+    while (fscanf(fp, "%s %ld", key, &value) != EOF) {
+        if (strcmp(key, "SwapTotal:") == 0)
+            *swap_total = value;
+        if (strcmp(key, "SwapFree:") == 0)
+            swap_free = value;
+    }
+    fclose(fp);
+
+    if (*swap_total > 0) {
+        *swap_used = *swap_total - swap_free;
+        *swap_usage = 100.0 * (double)*swap_used / *swap_total;
+    } else {
+        *swap_usage = 0; // No swap available
+    }
 }
 
 void get_network_usage(double *net_in, double *net_out, long *total_received, long *total_sent) {
