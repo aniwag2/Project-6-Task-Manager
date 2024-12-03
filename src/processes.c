@@ -53,6 +53,7 @@ GtkWidget* create_process_tab() {
     ProcessData *process_data = g_malloc(sizeof(ProcessData));
     process_data->store = store;
     process_data->toggle_button = GTK_TOGGLE_BUTTON(user_processes_toggle);
+    process_data->treeview = GTK_TREE_VIEW(treeview); // Set the treeview in ProcessData
 
     // Connect signals
     g_signal_connect(refresh_button, "clicked", G_CALLBACK(on_refresh_button_clicked), process_data);
@@ -66,9 +67,6 @@ GtkWidget* create_process_tab() {
 
     // Update the process list initially
     update_process_list(process_data);
-
-    // Set up periodic refresh every 5 seconds
-    g_timeout_add_seconds(5, update_process_list_timeout, process_data);
 
     return vbox;
 }
@@ -88,19 +86,56 @@ gboolean update_process_list_timeout(gpointer data) {
 void update_process_list(ProcessData *process_data) {
     GtkTreeStore *store = process_data->store;
     GtkToggleButton *toggle_button = process_data->toggle_button;
+    GtkTreeView *treeview = process_data->treeview;
 
     gboolean show_user_only = gtk_toggle_button_get_active(toggle_button);
     uid_t current_uid = getuid(); // Current user's UID
 
-    DIR *proc_dir = opendir("/proc");
-    if (!proc_dir) return;
+    // Record expanded nodes
+    GtkTreeModel *model = GTK_TREE_MODEL(store);
+    GList *expanded_pids = NULL;
 
-    struct dirent *entry;
-    gtk_tree_store_clear(store); // Clear the existing list
+    // Function to recursively collect expanded nodes
+    void collect_expanded_nodes(GtkTreeModel *model, GtkTreeIter *iter) {
+        do {
+            GtkTreePath *path = gtk_tree_model_get_path(model, iter);
+            if (gtk_tree_view_row_expanded(treeview, path)) {
+                guint pid;
+                gtk_tree_model_get(model, iter, 0, &pid, -1);
+                expanded_pids = g_list_prepend(expanded_pids, GUINT_TO_POINTER(pid));
+
+                // Recurse into child nodes
+                if (gtk_tree_model_iter_has_child(model, iter)) {
+                    GtkTreeIter child_iter;
+                    if (gtk_tree_model_iter_children(model, &child_iter, iter)) {
+                        collect_expanded_nodes(model, &child_iter);
+                    }
+                }
+            }
+            gtk_tree_path_free(path);
+        } while (gtk_tree_model_iter_next(model, iter));
+    }
+
+    // Start from the root
+    GtkTreeIter iter;
+    if (gtk_tree_model_get_iter_first(model, &iter)) {
+        collect_expanded_nodes(model, &iter);
+    }
+
+    // Clear the existing list
+    gtk_tree_store_clear(store);
 
     // Hash table to store PID to iter mapping
     GHashTable *pid_to_iter = g_hash_table_new(g_direct_hash, g_direct_equal);
 
+    // Open /proc directory
+    DIR *proc_dir = opendir("/proc");
+    if (!proc_dir) {
+        g_warning("Failed to open /proc directory");
+        return;
+    }
+
+    struct dirent *entry;
     while ((entry = readdir(proc_dir)) != NULL) {
         if (entry->d_type == DT_DIR && atoi(entry->d_name) > 0) {
             unsigned int pid = atoi(entry->d_name);
@@ -142,8 +177,9 @@ void update_process_list(ProcessData *process_data) {
             stat_file = fopen(path, "r");
             long utime = 0, stime = 0;
             if (stat_file) {
-                //char unused[1024];
-                fscanf(stat_file, "%*u %*s %*c %*u %*u %*u %*u %*u %*u %*u %*u %*u %*u %ld %ld", &utime, &stime);
+                if (fscanf(stat_file, "%*u %*s %*c %*u %*u %*u %*u %*u %*u %*u %*u %*u %*u %ld %ld", &utime, &stime) < 2) {
+                    // Handle error if necessary
+                }
                 fclose(stat_file);
             }
             long total_time = (utime + stime) / sysconf(_SC_CLK_TCK);
@@ -202,6 +238,36 @@ void update_process_list(ProcessData *process_data) {
     }
 
     closedir(proc_dir);
+
+    // Restore expanded nodes
+    // Function to recursively expand nodes if their PID is in the expanded_pids list
+    void expand_nodes(GtkTreeModel *model, GtkTreeIter *iter) {
+        do {
+            guint pid;
+            gtk_tree_model_get(model, iter, 0, &pid, -1);
+            if (g_list_find(expanded_pids, GUINT_TO_POINTER(pid))) {
+                GtkTreePath *path = gtk_tree_model_get_path(model, iter);
+                gtk_tree_view_expand_row(treeview, path, FALSE);
+                gtk_tree_path_free(path);
+
+                // Recurse into child nodes
+                if (gtk_tree_model_iter_has_child(model, iter)) {
+                    GtkTreeIter child_iter;
+                    if (gtk_tree_model_iter_children(model, &child_iter, iter)) {
+                        expand_nodes(model, &child_iter);
+                    }
+                }
+            }
+        } while (gtk_tree_model_iter_next(model, iter));
+    }
+
+    // Start from the root
+    if (gtk_tree_model_get_iter_first(model, &iter)) {
+        expand_nodes(model, &iter);
+    }
+
+    // Free the expanded_pids list
+    g_list_free(expanded_pids);
 
     // Free the hash table
     GHashTableIter hash_iter;
@@ -425,13 +491,13 @@ void get_process_details(guint pid, char *details, size_t size) {
     // Calculate CPU time
     long total_time = (utime + stime) / sysconf(_SC_CLK_TCK);
 
-    // Format the details string
     snprintf(details, size,
              "Process Name: %s\n"
              "User: %s\n"
              "State: %s\n"
              "CPU Time: %ld s\n"
              "Started At: %s\n"
+             "Memory: %lu kB\n"
              "Virtual Memory: %lu kB\n"
              "Resident Memory: %lu kB\n"
              "Shared Memory: %lu kB\n",
@@ -440,6 +506,7 @@ void get_process_details(guint pid, char *details, size_t size) {
              state,
              total_time,
              start_time_str,
+             rss,         // Using RSS as "Memory"
              vsize,
              rss,
              shared_mem);
