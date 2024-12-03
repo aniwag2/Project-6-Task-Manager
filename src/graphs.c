@@ -103,11 +103,10 @@ gboolean update_metrics(gpointer data) {
 }
 
 
-void draw_cpu_graph(GtkWidget *widget, cairo_t *cr, gpointer data) {
+void draw_cpu_graph(GtkWidget *widget, cairo_t *cr) {
     Metrics *metrics = g_object_get_data(G_OBJECT(widget), "metrics");
     if (!metrics) return;
 
-    // Set background to white
     cairo_set_source_rgb(cr, 1, 1, 1);
     cairo_paint(cr);
 
@@ -117,7 +116,6 @@ void draw_cpu_graph(GtkWidget *widget, cairo_t *cr, gpointer data) {
     cairo_rectangle(cr, 50, 50, 500, 150);
     cairo_stroke(cr);
 
-    // Set line width for the graph line
     cairo_set_line_width(cr, 2); 
 
     // Set the color for the CPU usage line (orange)
@@ -138,20 +136,17 @@ void draw_cpu_graph(GtkWidget *widget, cairo_t *cr, gpointer data) {
         cairo_line_to(cr, x, y);
     }
 
-    // Draw the line graph
     cairo_stroke(cr);
 
-    // Display CPU usage text with color-coded dot
     char buffer[64];
 
     // Draw the colored dot
-    cairo_set_source_rgb(cr, 0.949, 0.522, 0); // Same color as the line
-    cairo_arc(cr, 50, 40, 5, 0, 2 * M_PI); // Position (50, 40), radius 5
+    cairo_set_source_rgb(cr, 0.949, 0.522, 0);
+    cairo_arc(cr, 50, 40, 5, 0, 2 * M_PI);
     cairo_fill(cr);
 
-    // Set text color to black
     cairo_set_source_rgb(cr, 0, 0, 0);
-    cairo_move_to(cr, 60, 45); // Adjust position to be next to the dot
+    cairo_move_to(cr, 60, 45);
     snprintf(buffer, sizeof(buffer), "CPU1 %.2f%%", metrics->cpu_usage);
     cairo_show_text(cr, buffer);
 
@@ -160,7 +155,7 @@ void draw_cpu_graph(GtkWidget *widget, cairo_t *cr, gpointer data) {
     cairo_show_text(cr, "CPU History");
 }
 
-void draw_mem_swap_graph(GtkWidget *widget, cairo_t *cr, gpointer data) {
+void draw_mem_swap_graph(GtkWidget *widget, cairo_t *cr) {
     Metrics *metrics = g_object_get_data(G_OBJECT(widget), "metrics");
     if (!metrics) return;
 
@@ -269,7 +264,7 @@ void draw_mem_swap_graph(GtkWidget *widget, cairo_t *cr, gpointer data) {
     // cairo_rectangle(cr, 150, 180 - metrics->swap_usage * 1.8, 50, metrics->swap_usage * 1.8);
     // cairo_fill(cr);
 
-void draw_network_graph(GtkWidget *widget, cairo_t *cr, gpointer data) {
+void draw_network_graph(GtkWidget *widget, cairo_t *cr) {
     Metrics *metrics = g_object_get_data(G_OBJECT(widget), "metrics");
     if (!metrics) return;
 
@@ -319,7 +314,6 @@ void draw_network_graph(GtkWidget *widget, cairo_t *cr, gpointer data) {
         cairo_line_to(cr, x, y);
     }
 
-    // Draw the line graph
     cairo_stroke(cr);
 
     // Network usage text with color-coded dots
@@ -331,7 +325,6 @@ void draw_network_graph(GtkWidget *widget, cairo_t *cr, gpointer data) {
     format_bytes(metrics->total_received, totalrec);
     format_bytes(metrics->total_sent, totalsent);
 
-    // Draw graph title
     cairo_set_source_rgb(cr, 0, 0, 0);
     cairo_move_to(cr, 50, 20);
     cairo_show_text(cr, "Network Usage");
@@ -410,6 +403,10 @@ void get_memory_usage(double *memory_usage, long *mem_used, long *mem_total) {
 
     if (*mem_total > 0) {
         *mem_used = *mem_total - (mem_free + buffers + cached);
+
+        *mem_total *= 1024;
+        *mem_used *= 1024;
+
         *memory_usage = 100.0 * (double)*mem_used / *mem_total;
     } else {
         *memory_usage = -1;
@@ -441,9 +438,13 @@ void get_swap_usage(double *swap_usage, long *swap_used, long *swap_total) {
 
     if (*swap_total > 0) {
         *swap_used = *swap_total - swap_free;
+
+        *swap_total *= 1024;
+        *swap_used *= 1024;
+
         *swap_usage = 100.0 * (double)*swap_used / *swap_total;
     } else {
-        *swap_usage = 0; // No swap available
+        *swap_usage = 0;
     }
 }
 
@@ -452,7 +453,6 @@ void get_network_usage(double *net_in, double *net_out, long *total_received, lo
     char buffer[1024];
     FILE *fp = fopen("/proc/net/dev", "r");
 
-    // Skip headers
     fgets(buffer, sizeof(buffer), fp);
     fgets(buffer, sizeof(buffer), fp);
 
@@ -466,11 +466,11 @@ void get_network_usage(double *net_in, double *net_out, long *total_received, lo
     }
     fclose(fp);
 
-    *net_in = (rx - prev_rx); // 1024.0;  // KiB/s
-    *net_out = (tx - prev_tx); // 1024.0; // KiB/s
+    *net_in = (rx - prev_rx);
+    *net_out = (tx - prev_tx);
 
-    *total_received = rx; // 1024.0; // KiB
-    *total_sent = tx; // 1024.0; // KiB
+    *total_received = rx;
+    *total_sent = tx;
 
     prev_rx = rx;
     prev_tx = tx;
